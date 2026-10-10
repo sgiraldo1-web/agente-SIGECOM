@@ -158,7 +158,9 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
             log.info("paso %d [%s] %s · %s · %s", step, decision.model, decision.riesgo,
                      decision.intencion, ", ".join(_describe(a) for a in decision.acciones))
             emit("paso", {"n": step, "intencion": decision.intencion, "riesgo": decision.riesgo,
-                          "acciones": [_describe(a) for a in decision.acciones]})
+                          "acciones": [_describe(a) for a in decision.acciones],
+                          "puntos": [[a["x"], a["y"]] for a in decision.acciones
+                                     if "x" in a and a["tipo"] != "zoom"]})
 
             term = decision.terminal
             if term and term["tipo"] == "fail":
@@ -195,10 +197,10 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                 state.history.append(f"{step}. {decision.intencion} → {guard.message}")
                 feedback = [guard.message]
                 log.info("guardia: %s", guard.message)
+                emit("bloqueo", {"n": step, "mensaje": guard.message})
                 continue
 
             if approver is not None and guard.riesgo != "bajo":
-                emit("aprobacion", {"intencion": decision.intencion})
                 if not await approver(decision):
                     return finish("fallida", "Tarea cancelada por el usuario antes de: "
                                   + summary.redact(decision.intencion, secrets))

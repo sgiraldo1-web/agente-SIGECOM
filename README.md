@@ -16,7 +16,9 @@ está en `base/CONTEXTO_DESARROLLO.md` y en el documento de diseño en PDF.
 - [x] Planificador con OpenRouter y bucle del agente (`app/planner.py`, `app/agent.py`)
 - [x] Guardias, verificador y resumen sin secretos (`app/guards.py`, `app/verifier.py`, `app/summary.py`)
 - [x] API (`/health`, `POST /tasks`, `GET /tasks/{id}`) y gestor de tareas (`app/main.py`, `app/tasks.py`)
-- [ ] Despliegue en Railway
+- [x] Consola web (`app/static/index.html`, en `/`): tarea en lenguaje natural, vista en vivo,
+      pasos, aprobación antes de cambiar datos (modo supervisado) y cancelación
+- [ ] Despliegue
 
 Pruebas de práctica E1 a E5: 5 de 5 en la primera corrida completa (26 a 135 s por tarea,
 unos 0,01 USD por tarea con `anthropic/claude-haiku-5.5` y respaldo `openai/gpt-6-luna`).

@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel del Asistente</title>
+<link rel="icon" href="/static/logo.png">
+<style>
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url("/static/inter-latin.woff2") format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url("/static/inter-latin-ext.woff2") format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+20A0-20AB, U+20AD-20C4, U+2C60-2C7F, U+A720-A7FF; }
+
+/* Nocturne: tokens del diseño "Panel del Asistente" */
+:root {
+  --color-bg: #161826; --color-surface: #232532; --color-text: #e9e9ed;
+  --color-accent: #9184d9;
+  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-neutral-100: #f3f5fe; --color-neutral-200: #e4e7f5; --color-neutral-300: #cfd3e5;
+  --color-neutral-400: #b2b6ca; --color-neutral-500: #9397ab; --color-neutral-600: #75798c;
+  --color-neutral-700: #595d6c; --color-neutral-800: #3f424d; --color-neutral-900: #292b31;
+  --color-accent-100: #f5f4ff; --color-accent-200: #e7e5fe; --color-accent-300: #d2cefd;
+  --color-accent-400: #b5abfc; --color-accent-500: #968ae0; --color-accent-600: #796cbf;
+  --color-accent-700: #5d5294; --color-accent-800: #423a6a; --color-accent-900: #2b2741;
+  --font-body: "Inter", system-ui, sans-serif;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 14px;
+  --shadow-sm: 0 0 0 1px #3f424d;
+  --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0,0,0,0.55);
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body);
+  font-size: 15px; line-height: 1.55; }
+h2, h3 { font-weight: 500; line-height: 1.12; letter-spacing: -0.015em; margin: 0; }
+p { margin: 0; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+[hidden] { display: none !important; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+  font: inherit; font-weight: 500; font-size: 14px; line-height: 1.2; color: var(--color-text);
+  background: transparent; border: 1px solid transparent; padding: 5.6px 10px; border-radius: var(--radius-md); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { color: var(--color-accent); border-color: var(--color-accent); }
+.btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.btn-primary:active:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+.btn-secondary { border-color: var(--color-divider); }
+.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.btn-ghost { color: var(--color-accent); padding-inline: 2.8px; }
+.btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.btn-block { width: 100%; }
+
+.input { width: 100%; min-height: 36px; padding: 6px 10px; font: inherit; font-size: 14px; color: var(--color-text);
+  caret-color: var(--color-accent); background: var(--color-surface); border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md); }
+.input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+textarea.input { resize: vertical; font-size: 15px; line-height: 1.5; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > label { font-size: 12px; color: var(--color-neutral-300); }
+
+.card { display: flex; flex-direction: column; padding: 22px; border-radius: var(--radius-md); background: var(--color-surface); }
+.tag { display: inline-flex; align-items: center; font-size: 11px; letter-spacing: 0.02em; padding: 3px 10px;
+  border-radius: 6px; white-space: nowrap; }
+.tag-accent { background: var(--color-accent-800); color: var(--color-accent-100); }
+.tag-neutral { background: var(--color-neutral-800); color: var(--color-neutral-100); }
+.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
+.muted { color: var(--color-neutral-300); }
+
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 var(--color-accent) } 100% { box-shadow: 0 0 0 14px transparent } }
+
+.page { min-height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 28px; flex-wrap: wrap; }
+header img { height: 26px; display: block; mix-blend-mode: lighten; }
+.status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-neutral-300); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent-300); flex: none; }
+.dot.off { background: var(--color-neutral-600); }
+main { flex: 1; display: flex; flex-wrap: wrap; gap: 20px; padding: 24px 28px; align-items: flex-start;
+  max-width: 1320px; width: 100%; }
+.col-left { flex: 1 1 320px; max-width: 420px; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.col-right { flex: 2 1 520px; display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+footer { padding: 18px 28px 24px; font-size: 13px; color: var(--color-neutral-400); }
+
+.conn { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: var(--radius-md);
+  background: var(--color-neutral-900); }
+.conn-toggle { all: unset; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 13px; color: var(--color-neutral-200); }
+.conn-toggle:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
+.check { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--color-neutral-200); cursor: pointer; }
+.check input { accent-color: var(--color-accent); width: 16px; height: 16px; margin: 0; }
+
+.recent-item { all: unset; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 8px; margin: 0 -8px; border-radius: var(--radius-md); }
+.recent-item:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.recent-item[aria-current="true"] { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.recent-item:focus-visible { outline: 2px solid var(--color-accent); }
+.recent-name { font-size: 14px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-when { font-size: 12px; color: var(--color-neutral-400); }
+
+.kicker { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--color-accent-300); }
+.bar { height: 6px; border-radius: 3px; background: var(--color-neutral-800); overflow: hidden; }
+.bar > div { height: 100%; width: 0; background: var(--color-accent); border-radius: 3px; transition: width .6s ease; }
+
+.live { border-radius: var(--radius-md); overflow: hidden; background: var(--color-neutral-900); box-shadow: var(--shadow-sm); }
+.live-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px;
+  background: var(--color-neutral-800); font-size: 12px; color: var(--color-neutral-300); }
+.live-badge { display: flex; align-items: center; gap: 6px; }
+.live-badge .dot { width: 6px; height: 6px; background: var(--color-accent); animation: pulse 1.6s infinite; }
+.live-badge.idle .dot { background: var(--color-neutral-600); animation: none; }
+.screen { position: relative; aspect-ratio: 1280 / 800; background: var(--color-neutral-900); }
+.screen img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.screen .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
+  text-align: center; font-size: 13px; color: var(--color-neutral-400); }
+.target { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%;
+  border: 2px solid var(--color-accent); background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  animation: ring 1.4s infinite; pointer-events: none; transition: left .3s ease, top .3s ease; }
+
+.approval { gap: 12px; box-shadow: inset 0 0 0 1px var(--color-accent), var(--shadow-md); }
+.result-text { font-size: 15px; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; }
+
+.step { display: flex; align-items: center; gap: 14px; padding: 9px 0; }
+.step-dot { flex: none; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; background: var(--color-neutral-800); color: var(--color-neutral-200); }
+.step.done .step-dot { background: var(--color-accent-800); color: var(--color-accent-200); }
+.step.current .step-dot { background: var(--color-accent-900); box-shadow: inset 0 0 0 1px var(--color-accent); }
+.step-text { flex: 1; font-size: 15px; min-width: 0; overflow-wrap: anywhere; }
+.step-sub { display: block; font-size: 12px; color: var(--color-neutral-400); margin-top: 2px; }
+.notice { font-size: 13px; color: var(--color-neutral-300); padding: 10px 12px; border-radius: var(--radius-md);
+  background: var(--color-neutral-900); }
+
+@media (max-width: 640px) {
+  header, main, footer { padding-left: 16px; padding-right: 16px; }
+  .col-left { max-width: none; }
+  .card { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <img src="/static/logo.png" alt="Frontier">
+    <div class="status"><span id="statusDot" class="dot off"></span><span id="statusText">Sin conexión con el servicio</span></div>
+  </header>
+
+  <main>
+    <div class="col-left">
+      <section class="card" style="gap:14px;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <h2 style="font-size:20px;">¿Qué necesitas hacer?</h2>
+          <p class="muted" style="font-size:13px;line-height:1.5;text-wrap:pretty;">Escríbelo como se lo pedirías a un compañero. El asistente lo hará por ti en el sistema y te mostrará cada paso.</p>
+        </div>
+        <textarea id="taskText" class="input" rows="4" placeholder="Por ejemplo: exporta las facturas vencidas de este mes"></textarea>
+
+        <div class="conn">
+          <button id="connToggle" class="conn-toggle" aria-expanded="false" aria-controls="connBody">
+            <span style="display:flex;align-items:center;gap:8px;">
+              <svg width="16" height="16" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M208,40H48A24,24,0,0,0,24,64V176a24,24,0,0,0,24,24h72v16H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16H136V200h72a24,24,0,0,0,24-24V64A24,24,0,0,0,208,40Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V64a8,8,0,0,1,8-8H208a8,8,0,0,1,8,8Z"></path></svg>
+              <span id="connLabel">Escritorio remoto</span>
+            </span>
+            <span id="connAction" style="color:var(--color-accent-300);">Ver detalles</span>
+          </button>
+          <div id="connBody" style="display:flex;flex-direction:column;gap:10px;" hidden>
+            <div class="field">
+              <label for="apiToken">Token del equipo</label>
+              <input id="apiToken" class="input" type="password" autocomplete="off" placeholder="Bearer token del servicio">
+            </div>
+            <div class="field">
+              <label for="deskUrl">Dirección del escritorio</label>
+              <input id="deskUrl" class="input" placeholder="wss://escritorio/websockify" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="deskPass">Contraseña</label>
+              <input id="deskPass" class="input" type="password" autocomplete="off">
+            </div>
+            <span id="connHint" style="font-size:12px;color:var(--color-neutral-400);">La contraseña no se guarda en ningún registro.</span>
+          </div>
+        </div>
+
+        <label class="check"><input id="supervised" type="checkbox" checked> Pedirme aprobación antes de cambiar datos</label>
+        <p id="formError" style="font-size:13px;color:var(--color-accent-300);" hidden></p>
+        <button id="submitBtn" class="btn btn-primary btn-block" style="font-size:15px;padding:12px;">Enviar al asistente</button>
+      </section>
+
+      <section class="card" style="gap:6px;">
+        <h3 style="font-size:16px;margin-bottom:6px;">Tus tareas recientes</h3>
+        <div id="recentList"></div>
+        <p id="recentEmpty" class="muted" style="font-size:13px;">Aún no has enviado tareas.</p>
+      </section>
+    </div>
+
+    <div class="col-right">
+      <section class="card" style="gap:16px;">
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;">
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
+            <span id="kicker" class="kicker">Listo para empezar</span>
+            <h2 id="taskTitle" style="font-size:22px;text-wrap:pretty;overflow-wrap:anywhere;">Escribe una tarea para el asistente</h2>
+          </div>
+          <span id="progressLabel" class="muted" style="font-size:13px;"></span>
+        </div>
+        <div class="bar"><div id="progressBar"></div></div>
+
+        <div class="live">
+          <div class="live-head">
+            <span>Lo que ve el asistente ahora</span>
+            <span id="liveBadge" class="live-badge idle"><span class="dot"></span><span id="liveText">En espera</span></span>
+          </div>
+          <div class="screen">
+            <img id="screenImg" alt="Captura actual del escritorio remoto" hidden>
+            <div id="target" class="target" hidden></div>
+            <div id="screenEmpty" class="empty">Cuando envíes una tarea, aquí verás la pantalla del escritorio remoto en vivo.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="approvalCard" class="card approval" hidden>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <svg width="22" height="22" viewBox="0 0 256 256" fill="var(--color-accent)" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>
+          <h3 style="font-size:17px;">El asistente necesita tu aprobación</h3>
+        </div>
+        <p style="font-size:14px;line-height:1.55;color:var(--color-neutral-200);text-wrap:pretty;">El siguiente paso es <strong id="approvalIntent" style="font-weight:500;color:var(--color-text);"></strong>. <span id="approvalRisk"></span></p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+          <button id="approveBtn" class="btn btn-primary">Aprobar y continuar</button>
+          <button id="cancelBtn2" class="btn btn-ghost">Cancelar tarea</button>
+        </div>
+      </section>
+
+      <section id="resultCard" class="card" style="gap:8px;" hidden>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <svg id="iconOk" width="22" height="22" viewBox="0 0 256 256" fill="var(--color-accent)" aria-hidden="true"><path d="M173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"></path></svg>
+          <svg id="iconFail" width="22" height="22" viewBox="0 0 256 256" fill="var(--color-accent)" aria-hidden="true" hidden><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>
+          <h3 id="resultTitle" style="font-size:17px;">Listo</h3>
+        </div>
+        <p id="resultText" class="result-text"></p>
+      </section>
+
+      <section class="card" style="gap:4px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;">
+          <h3 style="font-size:16px;">Qué está haciendo</h3>
+          <button id="cancelBtn" class="btn btn-ghost" hidden>Cancelar tarea</button>
+        </div>
+        <div id="stepsList"></div>
+        <p id="stepsEmpty" class="muted" style="font-size:14px;">Los pasos aparecerán aquí a medida que el asistente trabaje.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer>Desarrollado por Santiago Giraldo G.</footer>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k, s = localStorage) { try { return s.getItem(k) || ''; } catch { return ''; } },
+    set(k, v, s = localStorage) { try { v ? s.setItem(k, v) : s.removeItem(k); } catch {} },
+  };
+  const CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"></path></svg>';
+
+  let config = null, currentId = store.get('task_id', sessionStorage) || null;
+  let view = null, lastFrame = -1, pollTimer = null, screenUrl = null;
+
+  $('apiToken').value = store.get('api_token');
+  $('deskUrl').value = store.get('desk_url');
+  $('deskPass').value = store.get('desk_pass', sessionStorage);
+
+  function token() { return $('apiToken').value.trim(); }
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { 'Authorization': 'Bearer ' + token(),
+      ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) } });
+    if (res.status === 401) { setStatus(false, 'Token del equipo inválido'); openConn(true); throw new Error('401'); }
+    return res;
+  }
+
+  function setStatus(ok, text) { $('statusDot').classList.toggle('off', !ok); $('statusText').textContent = text; }
+  function openConn(open) {
+    $('connBody').hidden = !open; $('connToggle').setAttribute('aria-expanded', String(open));
+    $('connAction').textContent = open ? 'Ocultar' : 'Ver detalles';
+  }
+  $('connToggle').addEventListener('click', () => openConn($('connBody').hidden));
+
+  function deskReady() {
+    return ($('deskUrl').value.trim() && $('deskPass').value) || (config && config.escritorio_por_defecto);
+  }
+  function refreshConnLabel() {
+    const custom = $('deskUrl').value.trim();
+    if (!token()) { $('connLabel').textContent = 'Escritorio remoto: falta el token'; return; }
+    if (custom) {
+      let host = custom; try { host = new URL(custom.replace(/^ws/, 'http')).host; } catch {}
+      $('connLabel').textContent = 'Escritorio remoto: ' + host;
+    } else if (config && config.escritorio_por_defecto) {
+      $('connLabel').textContent = 'Escritorio remoto: conectado';
+    } else {
+      $('connLabel').textContent = 'Escritorio remoto: sin configurar';
+    }
+    $('connHint').textContent = config && config.escritorio_por_defecto
+      ? 'Deja la dirección vacía para usar el escritorio configurado en el servicio. La contraseña no se guarda en ningún registro.'
+      : 'La contraseña no se guarda en ningún registro.';
+  }
+
+  async function loadConfig() {
+    if (!token()) { setStatus(false, 'Ingresa el token del equipo'); openConn(true); refreshConnLabel(); return; }
+    try {
+      const res = await api('/ui/config');
+      config = await res.json();
+      const host = $('deskUrl').value.trim() ? 'escritorio remoto' : (config.escritorio || 'el servicio');
+      setStatus(true, 'Conectado a ' + host);
+    } catch (e) { if (e.message !== '401') setStatus(false, 'Sin conexión con el servicio'); }
+    refreshConnLabel();
+  }
+
+  ['apiToken', 'deskUrl', 'deskPass'].forEach(id => $(id).addEventListener('change', () => {
+    store.set('api_token', token());
+    store.set('desk_url', $('deskUrl').value.trim());
+    store.set('desk_pass', $('deskPass').value, sessionStorage);
+    loadConfig(); loadRecent();
+  }));
+
+  function showError(msg) { $('formError').textContent = msg; $('formError').hidden = !msg; }
+
+  $('submitBtn').addEventListener('click', async () => {
+    const tarea = $('taskText').value.trim();
+    showError('');
+    if (!tarea) { showError('Escribe qué necesitas que haga el asistente.'); $('taskText').focus(); return; }
+    if (!token()) { showError('Falta el token del equipo.'); openConn(true); $('apiToken').focus(); return; }
+    if (!deskReady()) { showError('Falta la dirección y la contraseña del escritorio remoto.'); openConn(true); return; }
+    const body = { tarea, supervisado: $('supervised').checked };
+    if ($('deskUrl').value.trim()) body.escritorio = { url: $('deskUrl').value.trim(), password: $('deskPass').value };
+    $('submitBtn').disabled = true;
+    try {
+      const res = await api('/ui/tasks', { method: 'POST', body: JSON.stringify(body) });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        const d = Array.isArray(j.detail) ? j.detail.map(x => x.msg).join('; ') : (j.detail || res.statusText);
+        showError('No se pudo enviar: ' + d); return;
+      }
+      const { task_id } = await res.json();
+      selectTask(task_id);
+      loadRecent();
+    } catch (e) { if (e.message !== '401') showError('No se pudo conectar con el servicio.'); }
+    finally { $('submitBtn').disabled = false; }
+  });
+
+  $('approveBtn').addEventListener('click', () => act('approve'));
+  $('cancelBtn').addEventListener('click', () => act('cancel'));
+  $('cancelBtn2').addEventListener('click', () => act('cancel'));
+  async function act(what) {
+    if (!currentId) return;
+    $('approveBtn').disabled = $('cancelBtn2').disabled = true;
+    try { await api(`/ui/tasks/${currentId}/${what}`, { method: 'POST' }); } catch {}
+    poll();
+  }
+
+  function fmtWhen(ts) {
+    const d = new Date(ts * 1000), now = new Date();
+    const hm = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    if (d.toDateString() === now.toDateString()) return 'Hoy, ' + hm;
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return 'Ayer, ' + hm;
+    return d.toLocaleDateString('es-CO') + ', ' + hm;
+  }
+  function statusTag(t) {
+    if (t.estado === 'en_curso') return ['En curso', 'tag tag-accent'];
+    if (t.estado === 'terminada') return ['Terminada', 'tag tag-neutral'];
+    if (t.cancelada) return ['Cancelada', 'tag tag-outline'];
+    return ['No se pudo completar', 'tag tag-outline'];
+  }
+
+  async function loadRecent() {
+    if (!token()) return;
+    try {
+      const list = await (await api('/ui/tasks')).json();
+      const box = $('recentList'); box.replaceChildren();
+      $('recentEmpty').hidden = list.length > 0;
+      for (const t of list) {
+        const b = document.createElement('button');
+        b.className = 'recent-item'; b.setAttribute('aria-current', String(t.id === currentId));
+        const left = document.createElement('span');
+        left.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:0;';
+        const n = document.createElement('span'); n.className = 'recent-name'; n.textContent = t.tarea;
+        const w = document.createElement('span'); w.className = 'recent-when';
+        w.textContent = fmtWhen(t.creada) + (t.origen === 'api' ? ' · por API' : '');
+        left.append(n, w);
+        const [label, cls] = statusTag(t);
+        const tag = document.createElement('span'); tag.className = cls; tag.textContent = label;
+        b.append(left, tag);
+        b.addEventListener('click', () => selectTask(t.id));
+        box.append(b);
+      }
+    } catch {}
+  }
+
+  function selectTask(id) {
+    currentId = id; store.set('task_id', id, sessionStorage);
+    lastFrame = -1; view = null;
+    document.querySelectorAll('.recent-item').forEach(el => el.setAttribute('aria-current', 'false'));
+    poll();
+  }
+
+  async function poll() {
+    clearTimeout(pollTimer);
+    if (!currentId || !token()) return;
+    try {
+      const res = await api(`/ui/tasks/${currentId}`);
+      if (res.status === 404) { currentId = null; store.set('task_id', '', sessionStorage); render(null); return; }
+      const v = await res.json();
+      const changedState = !view || view.estado !== v.estado;
+      view = v; render(v);
+      if (v.frame !== lastFrame) { lastFrame = v.frame; loadScreen(); }
+      if (changedState) loadRecent();
+      if (v.estado === 'en_curso') pollTimer = setTimeout(poll, 1200);
+    } catch { pollTimer = setTimeout(poll, 3000); }
+  }
+
+  async function loadScreen() {
+    try {
+      const res = await api(`/ui/tasks/${currentId}/screen`);
+      if (res.status !== 200) return;
+      const url = URL.createObjectURL(await res.blob());
+      $('screenImg').src = url; $('screenImg').hidden = false; $('screenEmpty').hidden = true;
+      if (screenUrl) URL.revokeObjectURL(screenUrl);
+      screenUrl = url;
+    } catch {}
+  }
+
+  function fmtDur(s) { const m = Math.floor(s / 60), r = s % 60; return m ? `${m} min ${r} s` : `${r} s`; }
+
+  function render(v) {
+    const running = v && v.estado === 'en_curso';
+    const waiting = running && !!v.aprobacion;
+    $('cancelBtn').hidden = !running;
+    $('liveBadge').classList.toggle('idle', !running);
+    $('liveText').textContent = running ? 'En vivo' : (v ? 'Última captura' : 'En espera');
+
+    if (!v) {
+      $('kicker').textContent = 'Listo para empezar';
+      $('taskTitle').textContent = 'Escribe una tarea para el asistente';
+      $('progressLabel').textContent = ''; $('progressBar').style.width = '0';
+      $('approvalCard').hidden = $('resultCard').hidden = true;
+      $('stepsList').replaceChildren(); $('stepsEmpty').hidden = false;
+      $('screenImg').hidden = true; $('screenEmpty').hidden = false; $('target').hidden = true;
+      return;
+    }
+
+    $('taskTitle').textContent = v.tarea;
+    $('kicker').textContent =
+      waiting ? 'En pausa · esperando tu aprobación'
+      : v.en_espera ? 'En espera · el escritorio está ocupado'
+      : running ? 'En curso'
+      : v.estado === 'terminada' ? 'Terminada'
+      : v.cancelada ? 'Cancelada' : 'No se pudo completar';
+
+    const nPasos = v.pasos.length;
+    if (running) {
+      const left = Math.max(0, v.limite - v.segundos);
+      $('progressLabel').textContent = `Paso ${Math.max(1, nPasos)} · quedan unos ${Math.max(1, Math.round(left / 60))} min`;
+      $('progressBar').style.width = Math.min(96, Math.round(v.segundos / v.limite * 100)) + '%';
+    } else {
+      $('progressLabel').textContent = `${nPasos} ${nPasos === 1 ? 'paso' : 'pasos'} · ${fmtDur(v.segundos)}`;
+      $('progressBar').style.width = '100%';
+    }
+
+    // Aprobación
+    $('approvalCard').hidden = !waiting;
+    if (waiting) {
+      $('approvalIntent').textContent = v.aprobacion.intencion.replace(/\.$/, '');
+      $('approvalRisk').textContent = v.aprobacion.riesgo === 'destructivo'
+        ? 'Esta acción puede eliminar, anular o revertir datos.'
+        : 'Esta acción guarda, crea o exporta datos en el sistema.';
+      $('approveBtn').disabled = $('cancelBtn2').disabled = false;
+    }
+
+    // Resultado
+    $('resultCard').hidden = running;
+    if (!running) {
+      const ok = v.estado === 'terminada';
+      $('iconOk').hidden = !ok; $('iconFail').hidden = ok;
+      $('resultTitle').textContent = ok ? 'Listo' : v.cancelada ? 'Tarea cancelada' : 'No se pudo completar';
+      $('resultText').textContent = v.resumen;
+    }
+
+    // Punto donde actúa
+    const last = v.pasos[nPasos - 1];
+    const pt = running && last && last.puntos.length ? last.puntos[last.puntos.length - 1] : null;
+    $('target').hidden = !pt || $('screenImg').hidden;
+    if (pt) { $('target').style.left = (pt[0] / 1280 * 100) + '%'; $('target').style.top = (pt[1] / 800 * 100) + '%'; }
+
+    // Pasos
+    const blocked = new Set(v.eventos.filter(e => e.tipo === 'bloqueo').map(e => e.n));
+    const box = $('stepsList'); box.replaceChildren();
+    $('stepsEmpty').hidden = nPasos > 0;
+    if (!nPasos && running) {
+      $('stepsEmpty').hidden = false;
+      $('stepsEmpty').textContent = v.en_espera ? 'Esperando a que el escritorio quede libre…' : 'Conectando con el escritorio y mirando la pantalla…';
+    } else {
+      $('stepsEmpty').textContent = 'Los pasos aparecerán aquí a medida que el asistente trabaje.';
+    }
+    v.pasos.forEach((p, i) => {
+      const isLast = i === nPasos - 1, current = isLast && running, done = !current;
+      const row = document.createElement('div');
+      row.className = 'step ' + (current ? 'current' : 'done');
+      const dot = document.createElement('span'); dot.className = 'step-dot';
+      if (done) dot.innerHTML = CHECK_SVG; else dot.textContent = p.n;
+      const text = document.createElement('span'); text.className = 'step-text'; text.textContent = p.intencion;
+      const sub = document.createElement('span'); sub.className = 'step-sub'; sub.textContent = p.acciones.join(' · ');
+      text.append(sub);
+      row.append(dot, text);
+      let note = '', cls = 'tag tag-neutral';
+      if (current && waiting) { note = 'Espera tu aprobación'; cls = 'tag tag-accent'; }
+      else if (current) { note = 'Haciéndolo ahora'; cls = 'tag tag-accent'; }
+      else if (blocked.has(p.n)) { note = 'Bloqueado por seguridad'; cls = 'tag tag-outline'; }
+      else if (isLast && v.cancelada) { note = 'Cancelado'; }
+      else if (p.riesgo !== 'bajo') { note = 'Cambia datos'; }
+      if (note) { const t = document.createElement('span'); t.className = cls; t.textContent = note; row.append(t); }
+      box.append(row);
+    });
+  }
+
+  loadConfig().then(() => { loadRecent(); if (currentId) poll(); });
+  setInterval(loadRecent, 8000);
+})();
+</script>
+</body>
+</html>

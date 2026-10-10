@@ -2,6 +2,10 @@
 
 Las tareas sobre un mismo escritorio corren una a la vez (dos agentes en la
 misma sesión se pisarían). El plazo cuenta desde que llega la tarea.
+
+Las tareas lanzadas desde la interfaz pueden ir en modo supervisado: antes de
+una acción que cambia datos el agente se pausa y espera aprobación. Las que
+llegan por la API nunca se pausan.
 """
 
 from __future__ import annotations
@@ -14,16 +18,21 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 import httpx
 
 from app.agent import TaskResult, run_task
 from app.config import Settings
+from app.planner import Decision
 from app.screen import jpeg_bytes
+from app.summary import redact
 
 log = logging.getLogger(__name__)
 
 SAFETY_MARGIN_S = 15.0  # tope absoluto por encima del plazo interno del agente
+APPROVAL_TIMEOUT_S = 180.0
+SUPERVISED_EXTRA_S = 300.0  # las pausas de aprobación no deben comerse el plazo
 
 
 @dataclass
@@ -31,11 +40,21 @@ class TaskRecord:
     id: str
     tarea: str
     created: float
+    created_wall: float = field(default_factory=time.time)
+    origin: str = "api"
+    supervised: bool = False
+    desktop_host: str = ""
+    deadline_s: float = 0.0
     # estado y resumen se reemplazan juntos en una sola asignación
     result: tuple[str, str] = ("en_curso", "")
     events: list[dict] = field(default_factory=list)
     frame_jpeg: bytes | None = None
+    frame_seq: int = 0
+    pending: dict | None = None
+    cancelled: bool = False
+    started: float | None = None
     worker: asyncio.Task | None = None
+    _approval: asyncio.Future | None = None
 
     @property
     def estado(self) -> str:
@@ -71,13 +90,16 @@ class TaskManager:
     def _save(self, rec: TaskRecord) -> None:
         try:
             self._db.execute("INSERT OR REPLACE INTO tasks VALUES (?,?,?,?,?)",
-                             (rec.id, rec.tarea, rec.estado, rec.resumen, rec.created))
+                             (rec.id, rec.tarea, rec.estado, rec.resumen, rec.created_wall))
             self._db.commit()
         except sqlite3.Error as exc:
             log.warning("SQLite: %s", exc)
 
-    def create(self, tarea: str, url: str, password: str) -> TaskRecord:
-        rec = TaskRecord(id=uuid.uuid4().hex, tarea=tarea, created=time.monotonic())
+    def create(self, tarea: str, url: str, password: str, *, origin: str = "api",
+               supervised: bool = False) -> TaskRecord:
+        deadline = self.settings.task_deadline_s + (SUPERVISED_EXTRA_S if supervised else 0)
+        rec = TaskRecord(id=uuid.uuid4().hex, tarea=tarea, created=time.monotonic(), origin=origin,
+                         supervised=supervised, desktop_host=urlsplit(url).netloc, deadline_s=deadline)
         self.tasks[rec.id] = rec
         self._save(rec)
         rec.worker = asyncio.create_task(self._run(rec, url, password), name=f"task-{rec.id[:8]}")
@@ -87,17 +109,65 @@ class TaskManager:
         rec = self.tasks.get(task_id)
         if rec is not None:
             return rec
-        row = self._db.execute("SELECT id, tarea, estado, resumen FROM tasks WHERE id=?", (task_id,)).fetchone()
+        row = self._db.execute("SELECT id, tarea, estado, resumen, created FROM tasks WHERE id=?",
+                               (task_id,)).fetchone()
         if row is None:
             return None
-        estado = row[2] if row[2] in ("terminada", "fallida") else "fallida"
-        resumen = row[3] if row[2] in ("terminada", "fallida") else "La tarea se interrumpió por un reinicio del servicio."
-        return TaskRecord(id=row[0], tarea=row[1], created=0, result=(estado, resumen))
+        finished = row[2] in ("terminada", "fallida")
+        estado = row[2] if finished else "fallida"
+        resumen = row[3] if finished else "La tarea se interrumpió por un reinicio del servicio."
+        return TaskRecord(id=row[0], tarea=row[1], created=0, created_wall=row[4] or 0,
+                          result=(estado, resumen))
+
+    def recent(self, limit: int = 8) -> list[TaskRecord]:
+        return sorted(self.tasks.values(), key=lambda r: r.created_wall, reverse=True)[:limit]
+
+    # ── interfaz: aprobación y cancelación ─────────────────────────────
+
+    def answer(self, task_id: str, approve: bool) -> bool:
+        rec = self.tasks.get(task_id)
+        if rec is None or rec._approval is None or rec._approval.done():
+            return False
+        rec._approval.set_result(approve)
+        return True
+
+    def cancel(self, task_id: str) -> bool:
+        rec = self.tasks.get(task_id)
+        if rec is None or rec.estado != "en_curso":
+            return False
+        rec.cancelled = True
+        if rec._approval is not None and not rec._approval.done():
+            rec._approval.set_result(False)
+        elif rec.worker and not rec.worker.done():
+            rec.worker.cancel()
+        return True
+
+    def _approver(self, rec: TaskRecord):
+        async def approver(decision: Decision) -> bool:
+            rec._approval = asyncio.get_running_loop().create_future()
+            rec.pending = {"intencion": decision.intencion, "riesgo": decision.riesgo,
+                           "observacion": decision.observacion}
+            self._on_event(rec, "aprobacion", dict(rec.pending))
+            try:
+                ok = await asyncio.wait_for(rec._approval, APPROVAL_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                ok = False
+            finally:
+                rec.pending = None
+                rec._approval = None
+            self._on_event(rec, "respuesta", {"aprobado": ok})
+            if not ok:
+                rec.cancelled = True
+            return ok
+        return approver
+
+    # ── ejecución ───────────────────────────────────────────────────────
 
     def _on_event(self, rec: TaskRecord, kind: str, data: dict) -> None:
         if kind == "captura":
             try:
-                rec.frame_jpeg = jpeg_bytes(data["frame"], quality=60)
+                rec.frame_jpeg = jpeg_bytes(data["frame"], quality=70)
+                rec.frame_seq += 1
             except Exception:
                 pass
             return
@@ -105,27 +175,62 @@ class TaskManager:
 
     async def _run(self, rec: TaskRecord, url: str, password: str) -> None:
         lock = self._locks.setdefault(url, asyncio.Lock())
+        secrets = [password, self.settings.api_token, self.settings.openrouter_api_key]
         result: TaskResult | None = None
         try:
             async with lock:
-                budget = self.settings.task_deadline_s - (time.monotonic() - rec.created)
+                rec.started = time.monotonic()
+                budget = rec.deadline_s - (rec.started - rec.created)
                 if budget < 40:
                     rec.result = ("fallida", "No hubo tiempo para operar: el escritorio estaba ocupado con otra tarea.")
                     return
                 settings = dataclasses.replace(self.settings, task_deadline_s=budget)
                 result = await asyncio.wait_for(
                     run_task(rec.tarea, url, password, settings=settings, http=self._http,
-                             on_event=lambda k, d: self._on_event(rec, k, d)),
+                             on_event=lambda k, d: self._on_event(rec, k, d),
+                             approver=self._approver(rec) if rec.supervised else None),
                     timeout=budget + SAFETY_MARGIN_S)
-                rec.result = (result.estado, result.resumen)
+                if rec.cancelled:
+                    rec.result = ("fallida", "Cancelaste la tarea. " + result.resumen)
+                else:
+                    rec.result = (result.estado, result.resumen)
         except asyncio.TimeoutError:
             rec.result = ("fallida", "Se agotó el tiempo de la tarea y se detuvo la operación.")
         except asyncio.CancelledError:
-            rec.result = ("fallida", "La tarea fue cancelada.")
-            raise
+            rec.result = ("fallida", "Cancelaste la tarea; el asistente dejó de operar.")
+            if not rec.cancelled:  # apagado del servicio: propagar
+                raise
         except Exception as exc:
             log.exception("worker falló")
-            rec.result = ("fallida", f"Error interno del agente: {exc.__class__.__name__}.")
+            rec.result = ("fallida", redact(f"Error interno del agente: {exc.__class__.__name__}.", secrets))
         finally:
             self._save(rec)
             log.info("tarea %s -> %s", rec.id[:8], rec.estado)
+
+    # ── vista para la interfaz ──────────────────────────────────────────
+
+    def view(self, rec: TaskRecord) -> dict:
+        now = time.monotonic()
+        elapsed = (now - rec.started) if rec.started else 0.0
+        pasos = [e for e in rec.events if e["tipo"] == "paso"]
+        return {
+            "id": rec.id,
+            "tarea": rec.tarea,
+            "estado": rec.estado,
+            "resumen": rec.resumen,
+            "cancelada": rec.cancelled,
+            "supervisada": rec.supervised,
+            "origen": rec.origin,
+            "escritorio": rec.desktop_host,
+            "en_espera": rec.started is None and rec.estado == "en_curso",
+            "aprobacion": rec.pending,
+            "segundos": round(elapsed),
+            "limite": round(rec.deadline_s),
+            "max_pasos": self.settings.max_steps,
+            "pasos": [{"n": e["n"], "intencion": e["intencion"], "riesgo": e["riesgo"],
+                       "acciones": e["acciones"], "puntos": e.get("puntos", [])} for e in pasos],
+            "eventos": [e for e in rec.events if e["tipo"] in ("bloqueo", "verificacion", "aprobacion",
+                                                               "respuesta")][-10:],
+            "frame": rec.frame_seq,
+            "creada": rec.created_wall,
+        }

@@ -50,9 +50,18 @@ class Escritorio(BaseModel):
     @field_validator("url")
     @classmethod
     def _ws_url(cls, v: str) -> str:
-        if not v.startswith(("ws://", "wss://")):
-            raise ValueError("la url debe empezar con ws:// o wss://")
-        return v
+        """Acepta wss://…/websockify y también la dirección del noVNC (https://host/…)
+        o solo el host, que se convierten a wss://host/websockify."""
+        v = v.strip()
+        if v.startswith(("ws://", "wss://")):
+            return v
+        if "://" not in v:
+            v = "https://" + v
+        parts = urlsplit(v)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise ValueError("la dirección del escritorio debe ser wss://<host>/websockify")
+        scheme = "wss" if parts.scheme == "https" else "ws"
+        return f"{scheme}://{parts.netloc}/websockify"
 
     def __repr__(self) -> str:  # nunca mostrar la contraseña
         return f"Escritorio(url={self.url!r})"

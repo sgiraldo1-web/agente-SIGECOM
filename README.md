@@ -1,4 +1,8 @@
-# Agente que opera aplicaciones sin API · Frontier, Reto 1
+# agente-SIGECOM
+
+Un agente que aprende a operar sistemas sin API, por pantalla, y ejecuta tareas en lenguaje natural en apps que nunca ha visto.
+
+Frontier, Reto 1 · El agente que opera lo que no tiene API.
 
 Servicio que recibe una tarea en lenguaje natural y la ejecuta sobre un escritorio remoto
 mirando la pantalla y usando mouse y teclado por VNC (RFB sobre WebSocket). El diseño completo

@@ -1,0 +1,12 @@
+# Secretos y entorno local
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Capturas de pantalla: pueden mostrar claves o datos de la app
+capturas/
+
+# Contiene la contraseña del escritorio y la clave de integración en texto plano
+base/transcripcion_unificada_frontier_sigecom.md
+*.db

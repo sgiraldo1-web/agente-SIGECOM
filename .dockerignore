@@ -1,0 +1,8 @@
+.env
+.venv
+capturas
+base
+pruebas
+scripts
+*.db
+__pycache__

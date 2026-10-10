@@ -18,7 +18,7 @@ está en `base/CONTEXTO_DESARROLLO.md` y en el documento de diseño en PDF.
 - [x] API (`/health`, `POST /tasks`, `GET /tasks/{id}`) y gestor de tareas (`app/main.py`, `app/tasks.py`)
 - [x] Consola web (`app/static/index.html`, en `/`): tarea en lenguaje natural, vista en vivo,
       pasos, aprobación antes de cambiar datos (modo supervisado) y cancelación
-- [ ] Despliegue
+- [x] Despliegue en Railway
 
 Pruebas de práctica E1 a E5: 5 de 5 en la primera corrida completa (26 a 135 s por tarea,
 unos 0,01 USD por tarea con `anthropic/claude-haiku-5.5` y respaldo `openai/gpt-6-luna`).
@@ -42,13 +42,14 @@ cp .env.example .env   # completar valores; .env está en .gitignore
 
 Las capturas se guardan en `capturas/`, que no se versiona porque puede mostrar datos o claves.
 
-## Despliegue (Hugging Face Spaces)
+## Despliegue (Railway)
 
-1. Crear un Space con SDK **Docker** y cargar en *Settings → Variables and secrets* los secretos
-   `API_TOKEN`, `OPENROUTER_API_KEY`, `MODEL_PRIMARY`, `MODEL_FALLBACK`, `TASK_DEADLINE_S`, `MAX_STEPS`.
-2. Poner `HF_SPACE=usuario/space` y `HF_TOKEN=<token de escritura>` en `.env`.
-3. `.venv/Scripts/python scripts/deploy_space.py` sube un paquete mínimo (app, Dockerfile,
-   requirements) al Space, que se construye solo y queda en `https://usuario-space.hf.space`.
+El servicio se despliega desde este repositorio con el `Dockerfile` (Railway asigna el puerto en `PORT`).
+
+1. *New Project → Deploy from GitHub repo* y elegir este repositorio.
+2. Variables: `API_TOKEN`, `OPENROUTER_API_KEY`, `MODEL_PRIMARY`, `MODEL_FALLBACK`, `TASK_DEADLINE_S`, `MAX_STEPS`.
+3. *Settings → Networking → Generate Domain*; *Healthcheck Path* `/health`; una sola réplica.
+4. Probar contra la URL pública: `SERVICE_URL=https://<dominio> .venv/Scripts/python scripts/run_tests.py`
 
 ## Seguridad
 

@@ -24,6 +24,9 @@ CONFIG_WORDS = ("configuraci", "integraci", "clave", "credencial", "api key", "t
 COMMIT_WORDS = {"export": "exportar", "guard": "guardar", "grab": "guardar",
                 "confirm": "confirmar", "registr": "guardar", "acept": "confirmar",
                 "envi": "confirmar", "aplic": "confirmar", "crear": "guardar"}
+# Palabras en la tarea que autorizan cambiar el estado de un registro (cancelar una cita,
+# reactivarla). Una cita cancelada por pedido explícito no es una eliminación indebida.
+STATE_CHANGE_WORDS = DESTRUCTIVE_WORDS + ("cancel", "reactiv", "desactiv", "inactiv", "reabr", "restaur")
 DATA_KINDS = {"crear", "actualizar", "exportar", "eliminar", "otra"}
 
 
@@ -49,6 +52,7 @@ def intent_words(intent: str) -> str:
 class AgentState:
     tarea: str
     clasificacion: str | None = None
+    plan: str = ""
     notes: list[str] = field(default_factory=list)
     history: list[str] = field(default_factory=list)
     commits: list[str] = field(default_factory=list)  # claves de acciones que cambiaron datos
@@ -62,7 +66,7 @@ class AgentState:
 
     @property
     def allows_destructive(self) -> bool:
-        return any(w in self.task_plain for w in DESTRUCTIVE_WORDS)
+        return any(w in self.task_plain for w in STATE_CHANGE_WORDS)
 
     @property
     def allows_config(self) -> bool:

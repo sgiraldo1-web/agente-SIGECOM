@@ -6,3 +6,4 @@ pruebas
 scripts
 *.db
 __pycache__
+app_maps

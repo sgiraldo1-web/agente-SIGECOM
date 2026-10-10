@@ -18,6 +18,7 @@ class Settings:
     model_fallback: str
     task_deadline_s: float
     max_steps: int
+    explore_budget_s: float = 60.0
 
 
 def get_settings() -> Settings:
@@ -28,6 +29,7 @@ def get_settings() -> Settings:
         model_fallback=os.getenv("MODEL_FALLBACK", ""),
         task_deadline_s=float(os.getenv("TASK_DEADLINE_S", "270")),
         max_steps=int(os.getenv("MAX_STEPS", "40")),
+        explore_budget_s=float(os.getenv("EXPLORE_BUDGET_S", "60")),
     )
 
 

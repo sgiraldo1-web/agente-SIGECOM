@@ -7,10 +7,12 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable
+from urllib.parse import urlsplit
 
 import httpx
 
-from app import guards, summary
+from app import explorer, guards, summary
+from app.analyzer import analyze, plan_text
 from app.config import Settings
 from app.guards import AgentState
 from app.llm import LLM, LLMError
@@ -122,10 +124,35 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
 
         frame, _ = await wait_stable(client, min_wait=0.5, max_wait=2.0)
         emit("captura", {"frame": frame})
+
+        # Reconocimiento: revisar cada ventana para saber qué datos tiene (una vez por escritorio).
+        def progress(texto: str) -> None:
+            emit("paso", {"n": "·", "intencion": texto, "riesgo": "bajo", "acciones": [], "puntos": []})
+            emit("captura", {"frame": client.snapshot()})
+
+        budget = min(settings.explore_budget_s, (deadline - time.monotonic()) * 0.3)
+        app_map = await explorer.get_map(urlsplit(url).netloc, client, llm, budget_s=budget,
+                                         on_progress=progress)
+        map_text = app_map.text()
+        if map_text:
+            state.history.append(f"0. reconocimiento de la app: {len(app_map.pantallas)} ventanas revisadas")
+
+        # Entender bien la tarea antes de operar.
+        progress("Analizando lo que pide la tarea")
+        plan = await analyze(llm, tarea, map_text,
+                             timeout=max(5.0, min(25.0, deadline - time.monotonic() - 60)))
+        state.plan = plan_text(plan)
+        if state.plan:
+            log.info("plan:\n%s", state.plan)
+            emit("plan", {"texto": state.plan})
+        frame, _ = await wait_stable(client, min_wait=0.3, max_wait=1.5)
+        emit("captura", {"frame": frame})
         feedback: list[str] = []
         zoom_url: str | None = None
         verify_retries = 0
         commit_shots: list[str] = []
+        seen: dict[tuple, int] = {}  # firma de acciones -> paso en que se hicieron
+        warned: set[tuple] = set()
 
         while True:
             step += 1
@@ -148,7 +175,8 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                     tarea=tarea, step=step, max_steps=settings.max_steps, remaining_s=remaining,
                     clasificacion=state.clasificacion, notes=state.notes, history=state.history,
                     feedback=feedback, screenshot_url=jpeg_data_url(frame), zoom_url=zoom_url,
-                    timeout=min(35.0, remaining - VERIFY_RESERVE_S), extra_rules=extra_rules)
+                    timeout=min(35.0, remaining - VERIFY_RESERVE_S), extra_rules=extra_rules,
+                    app_map=map_text, plan=state.plan)
             except LLMError as exc:
                 log.warning("planificador sin respuesta: %s", exc)
                 state.history.append(f"{step}. (el modelo no respondió)")
@@ -190,6 +218,7 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                     frame, _ = await wait_stable(client, min_wait=0.3, max_wait=2.0)
                     ok, motivo = await verify(
                         llm, tarea=tarea, history=state.history, notes=state.notes, claim=claim,
+                        plan=state.plan,
                         screenshot_url=jpeg_data_url(frame), commit_shots=commit_shots,
                         timeout=max(5.0, min(25.0, deadline - time.monotonic() - 3)))
                     log.info("verificador: %s · %s", ok, motivo)
@@ -206,6 +235,23 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                             f"No se pudo confirmar que la tarea quedó cumplida: {motivo}. "
                             f"Lo que reportó el asistente: {term['resumen']}", [], secrets))
                 return finish("terminada", summary.build_done(term["resumen"], term["respuesta"], secrets))
+
+            # Repeticiones: escribir lo mismo en el mismo campo otra vez casi nunca sirve.
+            sig = tuple(_describe(a) for a in decision.acciones if a["tipo"] not in ("note", "zoom", "wait"))
+            if sig and sig in seen:
+                prev = seen[sig]
+                if any(a["tipo"] == "type" for a in decision.acciones) and sig not in warned:
+                    warned.add(sig)
+                    msg = (f"BLOQUEADO: ya hiciste exactamente esto en el paso {prev}. No repitas la misma "
+                           "búsqueda: cambia el criterio (apellido, sin tildes, documento, código, fecha) "
+                           "o usa lo que ya anotaste.")
+                    state.history.append(f"{step}. {decision.intencion} → {msg}")
+                    feedback = [msg]
+                    emit("bloqueo", {"n": step, "mensaje": msg})
+                    continue
+                feedback = [f"Aviso: repetiste las mismas acciones del paso {prev}. Si no avanzas, cambia de enfoque."]
+            if sig:
+                seen[sig] = step
 
             guard = guards.check(decision, state, frame)
             if not guard.ok:
@@ -246,7 +292,8 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
             acts = ", ".join(_describe(a) for a in guard.actions)
             result = "" if not touched_screen else (" → la pantalla cambió" if changed
                                                     else " → LA PANTALLA NO CAMBIÓ")
-            state.history.append(f"{step}. {decision.intencion} · {acts}{result}")
+            tag = f"[plan {decision.paso_plan}] " if decision.paso_plan else ""
+            state.history.append(f"{step}. {tag}{decision.intencion} · {acts}{result}")
     except Exception as exc:  # cualquier error inesperado termina la tarea limpia
         log.exception("error en la tarea")
         return finish("fallida", summary.redact(f"Error interno del agente: {exc.__class__.__name__}.", secrets))

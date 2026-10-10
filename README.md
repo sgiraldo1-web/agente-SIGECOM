@@ -40,6 +40,14 @@ cp .env.example .env   # completar valores; .env está en .gitignore
 
 Las capturas se guardan en `capturas/`, que no se versiona porque puede mostrar datos o claves.
 
+## Despliegue (Hugging Face Spaces)
+
+1. Crear un Space con SDK **Docker** y cargar en *Settings → Variables and secrets* los secretos
+   `API_TOKEN`, `OPENROUTER_API_KEY`, `MODEL_PRIMARY`, `MODEL_FALLBACK`, `TASK_DEADLINE_S`, `MAX_STEPS`.
+2. Poner `HF_SPACE=usuario/space` y `HF_TOKEN=<token de escritura>` en `.env`.
+3. `.venv/Scripts/python scripts/deploy_space.py` sube un paquete mínimo (app, Dockerfile,
+   requirements) al Space, que se construye solo y queda en `https://usuario-space.hf.space`.
+
 ## Seguridad
 
 Ningún secreto va en el código, los logs ni el repositorio. Todo se lee de variables de entorno

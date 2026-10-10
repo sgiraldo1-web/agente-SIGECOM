@@ -26,7 +26,9 @@ COMMIT_WORDS = {"export": "exportar", "guard": "guardar", "grab": "guardar",
                 "envi": "confirmar", "aplic": "confirmar", "crear": "guardar"}
 # Palabras en la tarea que autorizan cambiar el estado de un registro (cancelar una cita,
 # reactivarla). Una cita cancelada por pedido explícito no es una eliminación indebida.
-STATE_CHANGE_WORDS = DESTRUCTIVE_WORDS + ("cancel", "reactiv", "desactiv", "inactiv", "reabr", "restaur")
+STATE_CHANGE_WORDS = DESTRUCTIVE_WORDS + ("cancel", "reactiv", "desactiv", "inactiv", "reabr", "restaur",
+                                         "como estaba", "deshac", "deshaz", "devuelv", "devolv",
+                                         "valor anterior", "por error")
 DATA_KINDS = {"crear", "actualizar", "exportar", "eliminar", "otra"}
 
 

@@ -50,6 +50,8 @@ SYSTEM_PROMPT = """Eres un empleado nuevo que opera una aplicación de escritori
 - Si después de crear algo la tarea pide dejarlo en un estado (confirmada, activa), cambia ese estado también y compruébalo.
 - Antes de done, revisa uno por uno los criterios de éxito del PLAN; si falta alguno, sigue trabajando. En el resumen de done menciona cada sub-objetivo y su resultado (códigos creados o modificados).
 - Antes de modificar, ubica el registro exacto y ábrelo para leerlo completo. Si varios registros coinciden con lo pedido y la tarea no permite distinguirlos, NO cambies nada: usa fail y nombra los identificadores de cada candidato.
+- Exportar un reporte = abrir la lista de esos registros (por ejemplo Citas), aplicar exactamente los filtros pedidos (estado, fechas desde/hasta del periodo completo) y pulsar Exportar una vez. La ventana de reportes generados solo sirve para comprobar el resultado; un reporte viejo parecido no cumple la tarea, y un aviso sobre descargas no impide exportar.
+- "Déjala como estaba", "deshaz el cambio" o "se cambió por error" piden revertir: usa el botón Revertir de la bitácora sobre ese cambio, o pon el valor anterior que muestra la bitácora.
 - Guardar, exportar o confirmar se hace UNA sola vez. Si no aparece mensaje de confirmación, no repitas: comprueba el efecto donde se vería (la lista, el registro, la lista de reportes generados).
 - La acción type selecciona todo el contenido del campo y lo reemplaza. En listas desplegables, haz clic y elige la opción.
 - Las listas pueden tener varias páginas. Para contar, filtra y recorre TODAS las páginas, y registra con note el conteo de cada página. Cuenta solo las filas que cumplen exactamente (mismo nombre, mismo estado).

@@ -32,7 +32,17 @@ log = logging.getLogger(__name__)
 
 SAFETY_MARGIN_S = 15.0  # tope absoluto por encima del plazo interno del agente
 APPROVAL_TIMEOUT_S = 180.0
-SUPERVISED_EXTRA_S = 300.0  # las pausas de aprobación no deben comerse el plazo
+SUPERVISED_EXTRA_S = 300.0  # las pausas de aprobación o preguntas no deben comerse el plazo
+QUESTION_TIMEOUT_S = 300.0
+
+# Reglas extra para tareas lanzadas desde el panel: hay una persona que puede responder.
+ASSISTED_RULES = """Esta tarea la pidió una persona desde el panel y puede responderte.
+- Si te falta un dato necesario o la tarea es ambigua (por ejemplo, varios registros con el mismo nombre), usa la acción {"tipo":"preguntar","pregunta":"..."} (va sola) en lugar de fallar. Haz una sola pregunta clara con todo lo que necesitas. La respuesta aparecerá en las notas.
+- Nunca inventes datos (NIT, cédula, teléfono, ciudad, valores, fechas): pregúntalos."""
+
+CREATE_MISSING_RULE = """
+- Si la tarea necesita un registro relacionado que no existe (por ejemplo, el cliente de una venta o de un pedido), primero confirma que no existe buscando por nombre y variantes. Luego créalo: pregunta en una sola pregunta los datos obligatorios que falten. Guárdalo una vez, confírmalo y después continúa con la tarea original."""
+
 
 
 @dataclass
@@ -43,6 +53,7 @@ class TaskRecord:
     created_wall: float = field(default_factory=time.time)
     origin: str = "api"
     supervised: bool = False
+    create_missing: bool = False
     desktop_host: str = ""
     deadline_s: float = 0.0
     # estado y resumen se reemplazan juntos en una sola asignación
@@ -96,10 +107,12 @@ class TaskManager:
             log.warning("SQLite: %s", exc)
 
     def create(self, tarea: str, url: str, password: str, *, origin: str = "api",
-               supervised: bool = False) -> TaskRecord:
-        deadline = self.settings.task_deadline_s + (SUPERVISED_EXTRA_S if supervised else 0)
+               supervised: bool = False, create_missing: bool = False) -> TaskRecord:
+        # Por la interfaz hay pausas (aprobación, preguntas) que no deben comerse el plazo.
+        deadline = self.settings.task_deadline_s + (SUPERVISED_EXTRA_S if origin == "ui" else 0)
         rec = TaskRecord(id=uuid.uuid4().hex, tarea=tarea, created=time.monotonic(), origin=origin,
-                         supervised=supervised, desktop_host=urlsplit(url).netloc, deadline_s=deadline)
+                         supervised=supervised, create_missing=create_missing,
+                         desktop_host=urlsplit(url).netloc, deadline_s=deadline)
         self.tasks[rec.id] = rec
         self._save(rec)
         rec.worker = asyncio.create_task(self._run(rec, url, password), name=f"task-{rec.id[:8]}")
@@ -124,11 +137,12 @@ class TaskManager:
 
     # ── interfaz: aprobación y cancelación ─────────────────────────────
 
-    def answer(self, task_id: str, approve: bool) -> bool:
+    def answer(self, task_id: str, value) -> bool:
+        """Responde la pausa pendiente: True/False para una aprobación, texto para una pregunta."""
         rec = self.tasks.get(task_id)
         if rec is None or rec._approval is None or rec._approval.done():
             return False
-        rec._approval.set_result(approve)
+        rec._approval.set_result(value)
         return True
 
     def cancel(self, task_id: str) -> bool:
@@ -137,7 +151,7 @@ class TaskManager:
             return False
         rec.cancelled = True
         if rec._approval is not None and not rec._approval.done():
-            rec._approval.set_result(False)
+            rec._approval.set_result(None if (rec.pending or {}).get("tipo") == "pregunta" else False)
         elif rec.worker and not rec.worker.done():
             rec.worker.cancel()
         return True
@@ -145,8 +159,8 @@ class TaskManager:
     def _approver(self, rec: TaskRecord):
         async def approver(decision: Decision) -> bool:
             rec._approval = asyncio.get_running_loop().create_future()
-            rec.pending = {"intencion": decision.intencion, "riesgo": decision.riesgo,
-                           "observacion": decision.observacion}
+            rec.pending = {"tipo": "aprobacion", "intencion": decision.intencion,
+                           "riesgo": decision.riesgo, "observacion": decision.observacion}
             self._on_event(rec, "aprobacion", dict(rec.pending))
             try:
                 ok = await asyncio.wait_for(rec._approval, APPROVAL_TIMEOUT_S)
@@ -160,6 +174,30 @@ class TaskManager:
                 rec.cancelled = True
             return ok
         return approver
+
+    def _asker(self, rec: TaskRecord):
+        async def asker(question: str) -> str | None:
+            rec._approval = asyncio.get_running_loop().create_future()
+            rec.pending = {"tipo": "pregunta", "pregunta": question}
+            self._on_event(rec, "pregunta", {"pregunta": question})
+            try:
+                answer = await asyncio.wait_for(rec._approval, QUESTION_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                answer = None
+            finally:
+                rec.pending = None
+                rec._approval = None
+            answer = (answer or "").strip() if isinstance(answer, str) else None
+            self._on_event(rec, "respuesta", {"texto": answer or ""})
+            if not answer:
+                rec.cancelled = True
+            return answer or None
+        return asker
+
+    def _rules(self, rec: TaskRecord) -> str | None:
+        if rec.origin != "ui":
+            return None  # por la API el agente es estricto: no pregunta ni crea registros no pedidos
+        return ASSISTED_RULES + (CREATE_MISSING_RULE if rec.create_missing else "")
 
     # ── ejecución ───────────────────────────────────────────────────────
 
@@ -188,7 +226,9 @@ class TaskManager:
                 result = await asyncio.wait_for(
                     run_task(rec.tarea, url, password, settings=settings, http=self._http,
                              on_event=lambda k, d: self._on_event(rec, k, d),
-                             approver=self._approver(rec) if rec.supervised else None),
+                             approver=self._approver(rec) if rec.supervised else None,
+                             asker=self._asker(rec) if rec.origin == "ui" else None,
+                             extra_rules=self._rules(rec)),
                     timeout=budget + SAFETY_MARGIN_S)
                 if rec.cancelled:
                     rec.result = ("fallida", "Cancelaste la tarea. " + result.resumen)
@@ -220,6 +260,7 @@ class TaskManager:
             "resumen": rec.resumen,
             "cancelada": rec.cancelled,
             "supervisada": rec.supervised,
+            "crear_faltantes": rec.create_missing,
             "origen": rec.origin,
             "escritorio": rec.desktop_host,
             "en_espera": rec.started is None and rec.estado == "en_curso",
@@ -230,7 +271,7 @@ class TaskManager:
             "pasos": [{"n": e["n"], "intencion": e["intencion"], "riesgo": e["riesgo"],
                        "acciones": e["acciones"], "puntos": e.get("puntos", [])} for e in pasos],
             "eventos": [e for e in rec.events if e["tipo"] in ("bloqueo", "verificacion", "aprobacion",
-                                                               "respuesta")][-10:],
+                                                               "pregunta", "respuesta")][-20:],
             "frame": rec.frame_seq,
             "creada": rec.created_wall,
         }

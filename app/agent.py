@@ -27,6 +27,7 @@ CHANGE_TOLERANCE = 200
 
 EventFn = Callable[[str, dict], None]
 ApproverFn = Callable[[Decision], Awaitable[bool]]
+AskerFn = Callable[[str], Awaitable[str | None]]
 
 
 @dataclass
@@ -88,6 +89,7 @@ async def _execute(client: RFBClient, a: dict) -> None:
 
 async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                    on_event: EventFn | None = None, approver: ApproverFn | None = None,
+                   asker: AskerFn | None = None, extra_rules: str | None = None,
                    http: httpx.AsyncClient | None = None) -> TaskResult:
     """Ejecuta una tarea completa. Nunca lanza: siempre devuelve un TaskResult."""
     t0 = time.monotonic()
@@ -146,7 +148,7 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                     tarea=tarea, step=step, max_steps=settings.max_steps, remaining_s=remaining,
                     clasificacion=state.clasificacion, notes=state.notes, history=state.history,
                     feedback=feedback, screenshot_url=jpeg_data_url(frame), zoom_url=zoom_url,
-                    timeout=min(35.0, remaining - VERIFY_RESERVE_S))
+                    timeout=min(35.0, remaining - VERIFY_RESERVE_S), extra_rules=extra_rules)
             except LLMError as exc:
                 log.warning("planificador sin respuesta: %s", exc)
                 state.history.append(f"{step}. (el modelo no respondió)")
@@ -161,6 +163,20 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                           "acciones": [_describe(a) for a in decision.acciones],
                           "puntos": [[a["x"], a["y"]] for a in decision.acciones
                                      if "x" in a and a["tipo"] != "zoom"]})
+
+            question = decision.question
+            if question is not None:
+                if asker is None:  # por la API nadie puede responder: no se puede completar
+                    state.history.append(f"{step}. sin datos suficientes: {question}")
+                    return finish("fallida", summary.build_fail(
+                        f"Faltan datos para completar la tarea: {question}", [], secrets))
+                answer = await asker(question)
+                if not answer:
+                    return finish("fallida", summary.build_fail(
+                        f"La tarea quedó sin completar: no hubo respuesta a la pregunta «{question}».", [], secrets))
+                state.notes.append(f"El usuario respondió a «{question}»: {answer}")
+                state.history.append(f"{step}. preguntó: {question} → respuesta: {answer}")
+                continue
 
             term = decision.terminal
             if term and term["tipo"] == "fail":
@@ -191,7 +207,7 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                             f"Lo que reportó el asistente: {term['resumen']}", [], secrets))
                 return finish("terminada", summary.build_done(term["resumen"], term["respuesta"], secrets))
 
-            guard = guards.check(decision, state)
+            guard = guards.check(decision, state, frame)
             if not guard.ok:
                 state.blocked += 1
                 state.history.append(f"{step}. {decision.intencion} → {guard.message}")
@@ -206,6 +222,8 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                                   + summary.redact(decision.intencion, secrets))
 
             before = frame
+            if guard.riesgo != "bajo":
+                guards.commit(decision.intencion, state, frame)
             touched_screen = False
             for i, a in enumerate(guard.actions):
                 if a["tipo"] == "note":
@@ -217,9 +235,6 @@ async def run_task(tarea: str, url: str, password: str, *, settings: Settings,
                         await wait_stable(client, min_wait=0.5, max_wait=2.0, interval=0.25)
                     await _execute(client, a)
                     touched_screen = True
-            if guard.riesgo != "bajo":
-                guards.commit(decision.intencion, state)
-
             if touched_screen:
                 frame, _ = await wait_stable(client)
             else:

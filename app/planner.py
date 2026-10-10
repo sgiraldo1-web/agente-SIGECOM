@@ -14,6 +14,8 @@ RISKS = {"bajo", "cambia_datos", "destructivo"}
 SCREEN_ACTIONS = {"click", "double_click", "right_click", "type", "key", "scroll", "drag", "wait"}
 LOCAL_ACTIONS = {"zoom", "note"}
 TERMINAL_ACTIONS = {"done", "fail"}
+ASK_ACTION = "preguntar"
+SOLO_ACTIONS = TERMINAL_ACTIONS | {ASK_ACTION}
 
 SYSTEM_PROMPT = """Eres un empleado nuevo que opera una aplicación de escritorio desconocida. Solo ves capturas de pantalla y usas mouse y teclado. No hay API ni documentación: explora la pantalla y aprende la interfaz mirándola.
 
@@ -79,6 +81,12 @@ class Decision:
     raw: dict = field(default_factory=dict)
 
     @property
+    def question(self) -> str | None:
+        if self.acciones and self.acciones[0]["tipo"] == ASK_ACTION:
+            return self.acciones[0]["pregunta"]
+        return None
+
+    @property
     def terminal(self) -> dict | None:
         if self.acciones and self.acciones[0]["tipo"] in TERMINAL_ACTIONS:
             return self.acciones[0]
@@ -137,6 +145,11 @@ def normalize_action(a: dict) -> dict:
         out["resumen"] = str(a.get("resumen") or "").strip()
         r = a.get("respuesta")
         out["respuesta"] = None if r in (None, "", "null") else str(r).strip()
+    elif t == ASK_ACTION:
+        pregunta = str(a.get("pregunta") or "").strip()
+        if not pregunta:
+            raise ValueError("preguntar necesita 'pregunta'")
+        out["pregunta"] = pregunta[:600]
     elif t == "fail":
         out["razon"] = str(a.get("razon") or "").strip()
         datos = a.get("datos") or []
@@ -153,8 +166,8 @@ def parse_decision(obj: dict) -> Decision:
     if not isinstance(acciones, list) or not acciones:
         raise ValueError("'acciones' debe ser una lista con al menos una acción")
     norm = [normalize_action(a) for a in acciones]
-    if any(a["tipo"] in TERMINAL_ACTIONS for a in norm) and len(norm) > 1:
-        raise ValueError("done y fail deben ir solos en la lista de acciones")
+    if any(a["tipo"] in SOLO_ACTIONS for a in norm) and len(norm) > 1:
+        raise ValueError("done, fail y preguntar deben ir solos en la lista de acciones")
     riesgo = str(obj.get("riesgo") or "bajo").strip().lower()
     if riesgo not in RISKS:
         riesgo = "cambia_datos"  # ante la duda, el más restrictivo de los no destructivos
@@ -179,7 +192,7 @@ class Planner:
     async def decide(self, *, tarea: str, step: int, max_steps: int, remaining_s: float,
                      clasificacion: str | None, notes: list[str], history: list[str],
                      feedback: list[str], screenshot_url: str, zoom_url: str | None,
-                     timeout: float) -> Decision:
+                     timeout: float, extra_rules: str | None = None) -> Decision:
         lines = [f"TAREA: {tarea}", "",
                  f"Paso {step} de {max_steps} · quedan {int(remaining_s)} s."]
         if clasificacion:
@@ -197,7 +210,8 @@ class Planner:
             content += [{"type": "text", "text": "Zona ampliada que pediste con zoom:"},
                         {"type": "image_url", "image_url": {"url": zoom_url}}]
         content.append({"type": "text", "text": "Decide la siguiente acción. Responde solo el JSON."})
-        messages = [{"role": "system", "content": SYSTEM_PROMPT},
+        system = SYSTEM_PROMPT + ("\n\n## Modo asistido\n" + extra_rules if extra_rules else "")
+        messages = [{"role": "system", "content": system},
                     {"role": "user", "content": content}]
         obj, model = await self.llm.chat_json(messages, timeout=timeout, validate=parse_decision)
         decision = parse_decision(obj)

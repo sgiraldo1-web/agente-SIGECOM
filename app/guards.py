@@ -10,7 +10,12 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from app.planner import Decision
+
+# Fracción de píxeles distintos por debajo de la cual dos pantallas son "la misma".
+SAME_SCREEN_FRACTION = 0.02
 
 DESTRUCTIVE_WORDS = ("elimin", "borr", "anul", "revert", "revier", "suprim", "remov",
                      "delete", "remove")
@@ -47,6 +52,7 @@ class AgentState:
     notes: list[str] = field(default_factory=list)
     history: list[str] = field(default_factory=list)
     commits: list[str] = field(default_factory=list)  # claves de acciones que cambiaron datos
+    commit_frames: dict[str, list[np.ndarray]] = field(default_factory=dict)
     data_actions: int = 0
     blocked: int = 0
 
@@ -82,7 +88,17 @@ def _commit_key(text: str) -> str | None:
     return None
 
 
-def check(decision: Decision, state: AgentState) -> GuardResult:
+def _thumb(frame: np.ndarray) -> np.ndarray:
+    return frame[::4, ::4]
+
+
+def _same_screen(a: np.ndarray, b: np.ndarray) -> bool:
+    if a.shape != b.shape:
+        return False
+    return np.count_nonzero(np.any(a != b, axis=2)) < SAME_SCREEN_FRACTION * a.shape[0] * a.shape[1]
+
+
+def check(decision: Decision, state: AgentState, frame: np.ndarray | None = None) -> GuardResult:
     intent = intent_words(decision.intencion)
     riesgo = decision.riesgo
     actions = decision.acciones
@@ -111,10 +127,14 @@ def check(decision: Decision, state: AgentState) -> GuardResult:
                 return GuardResult(False, [], riesgo,
                                    "BLOQUEADO: ya exportaste una vez. Exportar de nuevo crea un reporte de más. "
                                    "Comprueba el resultado en la lista de reportes y termina.")
-            if not decision.reintento_justificado:
+            # Un segundo guardado es legítimo si es otro formulario (por ejemplo crear el
+            # cliente y luego la venta). Se bloquea si la pantalla es la misma del anterior.
+            previous = state.commit_frames.get(key, [])
+            same = frame is None or any(_same_screen(_thumb(frame), p) for p in previous)
+            if same and not decision.reintento_justificado:
                 return GuardResult(False, [], riesgo,
-                                   f"BLOQUEADO: ya ejecutaste una acción '{key}'. Antes de repetirla comprueba en "
-                                   "pantalla que la anterior no tuvo efecto y explica en 'reintento_justificado'.")
+                                   f"BLOQUEADO: ya ejecutaste una acción '{key}' en esta misma pantalla. Antes de "
+                                   "repetirla comprueba que la anterior no tuvo efecto y explica en 'reintento_justificado'.")
         if state.clasificacion in ("crear", "actualizar") and not state.notes:
             return GuardResult(False, [], riesgo,
                                "BLOQUEADO: antes de guardar registra con note lo que encontraste en la búsqueda "
@@ -122,6 +142,9 @@ def check(decision: Decision, state: AgentState) -> GuardResult:
     return GuardResult(True, actions, riesgo)
 
 
-def commit(decision_intent: str, state: AgentState) -> None:
-    state.commits.append(_commit_key(decision_intent) or "cambio")
+def commit(decision_intent: str, state: AgentState, frame: np.ndarray | None = None) -> None:
+    key = _commit_key(decision_intent) or "cambio"
+    state.commits.append(key)
+    if frame is not None:
+        state.commit_frames.setdefault(key, []).append(_thumb(frame))
     state.data_actions += 1

@@ -109,6 +109,11 @@ class UITaskIn(BaseModel):
     tarea: str = Field(min_length=1)
     escritorio: Escritorio | None = None
     supervisado: bool = True
+    crear_faltantes: bool = True
+
+
+class UIAnswerIn(BaseModel):
+    texto: str = Field(min_length=1, max_length=1000)
 
 
 def _ui_record(task_id: str):
@@ -134,7 +139,8 @@ async def ui_create(body: UITaskIn) -> dict:
         url, password = desktop_default.url, desktop_default.password
     else:
         raise HTTPException(status_code=422, detail="falta el escritorio (url y contraseña)")
-    rec = manager.create(body.tarea, url, password, origin="ui", supervised=body.supervisado)
+    rec = manager.create(body.tarea, url, password, origin="ui", supervised=body.supervisado,
+                         create_missing=body.crear_faltantes)
     return {"task_id": rec.id}
 
 
@@ -161,6 +167,12 @@ async def ui_screen(task_id: str) -> Response:
 async def ui_approve(task_id: str) -> dict:
     _ui_record(task_id)
     return {"ok": manager.answer(task_id, True)}
+
+
+@app.post("/ui/tasks/{task_id}/answer", dependencies=[Depends(require_token)])
+async def ui_answer(task_id: str, body: UIAnswerIn) -> dict:
+    _ui_record(task_id)
+    return {"ok": manager.answer(task_id, body.texto.strip())}
 
 
 @app.post("/ui/tasks/{task_id}/cancel", dependencies=[Depends(require_token)])
